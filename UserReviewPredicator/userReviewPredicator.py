@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 import spacy
 import math
+
+from matplotlib import pyplot as plt
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
@@ -14,8 +16,8 @@ from tensorflow.keras.layers import Attention, Add
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
-learning_rate = 0.001
-dropout_rate = 0.2
+learning_rate = 0.0001
+dropout_rate = 0.3
 
 class URP:
     def __init__(self, filename, reviewer_ID_idx, review_text_idx, review_rate_idx, max_user=None, epoch_no=None):
@@ -34,6 +36,7 @@ class URP:
         self.nlp = spacy.load('en_core_web_sm')
         self.tops_user = self.read_csv()
         self.target_users_data = self.process_users()
+        self.all_users_loss = {}
 
     def extract_emotion_words(self, text):
         doc = self.nlp(text)
@@ -70,7 +73,7 @@ class URP:
         MSE_list = []
         RMSE_list = []
 
-        for user in tqdm(self.target_users_data):
+        for index, user in enumerate(tqdm(self.target_users_data)):
             X_text_train, X_text_test, y_train, y_test = train_test_split(
                 user["review_text"], user["ratings"], test_size=ratio, random_state=42
             )
@@ -84,7 +87,7 @@ class URP:
             model = self.modle_builder(train_emotion)
 
             # predication results
-            y_pred = self.train_test(model, X_text_train_padded, X_text_test_padded, train_emotion, test_emotion, y_train)
+            y_pred = self.train_test(model, index, X_text_train_padded, X_text_test_padded, train_emotion, test_emotion, y_train)
 
             mae, mse, rmse, average_percentage_difference = self.evaluation(y_pred, y_test)
             average_percentage_differences.append(average_percentage_difference)
@@ -92,6 +95,7 @@ class URP:
             MSE_list.append(mse)
             RMSE_list.append(rmse)
 
+        plt.savefig('loss_plot.pdf')
         # average_percentage_difference
         apd = sum(average_percentage_differences)/self.max_user
         mae = sum(MAE_list)/self.max_user
@@ -102,11 +106,13 @@ class URP:
 
     def emotion_features_extraction(self, X_text_train, X_text_test):
         # extract sentiment entities from each review
+        print('please wait for emotion entities extracting...-2 mins')
         train_emotion_words = X_text_train.apply(self.extract_emotion_words)
         test_emotion_words = X_text_test.apply(self.extract_emotion_words)
+        print('emotion entities extractiong complete...')
 
         # emotion_features
-        emotion_vectorizer = TfidfVectorizer(max_features=100)  # Adjust max_features as needed
+        emotion_vectorizer = TfidfVectorizer(max_features=100)
         train_emotion_features = emotion_vectorizer.fit_transform(train_emotion_words)
         test_emotion_features = emotion_vectorizer.transform(test_emotion_words)
 
@@ -158,19 +164,34 @@ class URP:
 
         return model
 
-    def train_test(self, model, X_text_train_padded, X_text_test_padded, train_emotion, test_emotion, y_train):
+    def train_test(self, model, index, X_text_train_padded, X_text_test_padded, train_emotion, test_emotion, y_train):
         # train
-        model.fit(
+        history = model.fit(
             {'text_input': X_text_train_padded, 'emotion_input': train_emotion},
             y_train,
             epochs=self.epoch_no,
             validation_split=0.1,
             verbose=1
         )
+        self.all_users_loss[f"User_{index + 1}"] = history.history
+        self.loss_plot()
         # predication
         y_pred = model.predict([X_text_test_padded, test_emotion])
 
         return y_pred
+
+    def loss_plot(self):
+
+        plt.figure(figsize=(15, 8))
+
+        for user, history in self.all_users_loss.items():
+            plt.plot(history['loss'], label=f"{user} Training Loss")
+            plt.plot(history['val_loss'], label=f"{user} Validation Loss")
+
+        plt.title("Training and Validation Loss Over Epochs for Target Users")
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss")
+        plt.legend()
 
     def evaluation(self, y_pred, y_test):
         # calculate the percentage difference
