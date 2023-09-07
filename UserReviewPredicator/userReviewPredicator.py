@@ -14,14 +14,8 @@ from tensorflow.keras.layers import Attention, Add
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
-EPOCH_NO = 10
 learning_rate = 0.001
 dropout_rate = 0.2
-nlp = spacy.load('en_core_web_sm')
-average_percentage_differences = []
-MAE_list = []
-MSE_list = []
-RMSE_list = []
 
 class URP:
     def __init__(self, filename, reviewer_ID_idx, review_text_idx, review_rate_idx, max_user=None, epoch_no=None):
@@ -47,10 +41,13 @@ class URP:
         return ' '.join(emotion_words)
 
     def read_csv(self):
-        self.data = pd.read_csv(self.filename)
-        self.id_col_name = self.data.columns[self.reviewer_ID_idx]
-        self.text_col_name = self.data.columns[self.review_text_idx]
-        self.rate_col_name = self.data.columns[self.review_rate_idx]
+        with open(self.filename) as file:
+            line = file.readline()
+        line = line.strip().split(',')
+        self.id_col_name = line[self.reviewer_ID_idx]
+        self.text_col_name = line[self.review_text_idx]
+        self.rate_col_name = line[self.review_rate_idx]
+        self.data = pd.read_csv(self.filename, usecols=[self.id_col_name, self.text_col_name, self.rate_col_name])
 
         return self.data[self.id_col_name].value_counts().nlargest(self.max_user).index
 
@@ -68,6 +65,10 @@ class URP:
         return target_users_data
 
     def get_predication_result(self, ratio):
+        average_percentage_differences = []
+        MAE_list = []
+        MSE_list = []
+        RMSE_list = []
 
         for user in tqdm(self.target_users_data):
             X_text_train, X_text_test, y_train, y_test = train_test_split(
@@ -85,15 +86,19 @@ class URP:
             # predication results
             y_pred = self.train_test(model, X_text_train_padded, X_text_test_padded, train_emotion, test_emotion, y_train)
 
-            self.evaluation(y_pred, y_test)
+            mae, mse, rmse, average_percentage_difference = self.evaluation(y_pred, y_test)
+            average_percentage_differences.append(average_percentage_difference)
+            MAE_list.append(mae)
+            MSE_list.append(mse)
+            RMSE_list.append(rmse)
 
         # average_percentage_difference
         apd = sum(average_percentage_differences)/self.max_user
-        ame = sum(MAE_list)/self.max_user
-        ase = sum(MSE_list)/self.max_user
+        mae = sum(MAE_list)/self.max_user
+        mse = sum(MSE_list)/self.max_user
         rmse = sum(RMSE_list)/self.max_user
 
-        return apd, ame, ase, rmse
+        return apd, mae, mse, rmse
 
     def emotion_features_extraction(self, X_text_train, X_text_test):
         # extract sentiment entities from each review
@@ -178,11 +183,4 @@ class URP:
         mse = mean_squared_error(y_test, y_pred)
         rmse = math.sqrt(mse)
 
-        MAE_list.append(mae)
-        MSE_list.append(mse)
-        RMSE_list.append(rmse)
-        average_percentage_differences.append(average_percentage_difference)
-
-
-
-
+        return mae, mse, rmse, average_percentage_difference
