@@ -16,17 +16,16 @@ from tensorflow.keras.layers import Attention, Add
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
-learning_rate = 0.0001
-dropout_rate = 0.3
-
 class URP:
-    def __init__(self, filename, reviewer_ID_idx, review_text_idx, review_rate_idx, max_user=None, epoch_no=None):
+    def __init__(self, filename, reviewer_ID_idx, review_text_idx, review_rate_idx, max_user=None, epoch_no=None, learning_rate=None, dropout_rate=None):
         self.filename = filename
         self.reviewer_ID_idx = reviewer_ID_idx
         self.review_text_idx = review_text_idx
         self.review_rate_idx = review_rate_idx
         self.max_user = max_user
         self.epoch_no = epoch_no
+        self.learning_rate = learning_rate
+        self.dropout_rate = dropout_rate
 
         self.rate_col_name = None
         self.text_col_name = None
@@ -148,9 +147,9 @@ class URP:
 
         # LSTM
         text_lstm1 = LSTM(32, return_sequences=True)(text_combined)
-        dropout1 = Dropout(dropout_rate)(text_lstm1)
+        dropout1 = Dropout(self.dropout_rate)(text_lstm1)
         text_lstm2 = LSTM(64)(dropout1)
-        dropout2 = Dropout(dropout_rate)(text_lstm2)
+        dropout2 = Dropout(self.dropout_rate)(text_lstm2)
 
         concatenated = Concatenate()([dropout2, emotion_input])
         dense_layer = Dense(10, activation='relu')(concatenated)
@@ -158,7 +157,7 @@ class URP:
         model = Model(inputs=[text_input, emotion_input], outputs=[output])
 
         # Compile model with adaptive learning rate
-        optimizer = Adam(learning_rate=learning_rate)
+        optimizer = Adam(learning_rate=self.learning_rate)
         # compile model
         model.compile(loss='mean_squared_error', optimizer=optimizer)
 
